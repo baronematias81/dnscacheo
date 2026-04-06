@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dnscacheo — Grupo Barone SRL</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --sidebar-width: 230px;
+      --accent: #0d6efd;
+      --dark-bg: #0f1117;
+      --card-bg: #1a1d27;
+      --border: #2a2d3e;
+      --text-muted: #8b8fa8;
+    }
+    body { background: var(--dark-bg); color: #e2e4f0; font-family: 'Segoe UI', sans-serif; }
+
+    /* Sidebar */
+    #sidebar {
+      width: var(--sidebar-width); min-height: 100vh; background: var(--card-bg);
+      border-right: 1px solid var(--border); position: fixed; top: 0; left: 0;
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-brand {
+      padding: 20px 16px 16px; border-bottom: 1px solid var(--border);
+    }
+    .sidebar-brand h6 { color: #fff; margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .5px; }
+    .sidebar-brand small { color: var(--text-muted); font-size: 11px; }
+    .sidebar-status {
+      padding: 8px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted);
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .nav-link-side {
+      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+      color: var(--text-muted); text-decoration: none; font-size: 14px; border-radius: 6px; margin: 2px 8px;
+      transition: all .15s;
+    }
+    .nav-link-side:hover, .nav-link-side.active {
+      background: rgba(13,110,253,.15); color: #fff;
+    }
+    .nav-link-side.active { color: var(--accent); }
+    .nav-section { padding: 12px 16px 4px; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+    /* Main */
+    #main { margin-left: var(--sidebar-width); padding: 24px; }
+
+    /* Cards */
+    .card-dark {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+    }
+    .stat-card {
+      padding: 20px; border-radius: 10px; background: var(--card-bg);
+      border: 1px solid var(--border);
+    }
+    .stat-card .value { font-size: 28px; font-weight: 700; color: #fff; }
+    .stat-card .label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .stat-card .icon { font-size: 22px; opacity: .7; }
+
+    /* Tables */
+    .table-dark-custom { color: #e2e4f0; }
+    .table-dark-custom th { border-color: var(--border); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+    .table-dark-custom td { border-color: var(--border); font-size: 13px; vertical-align: middle; }
+    .table-dark-custom tr:hover td { background: rgba(255,255,255,.03); }
+
+    /* Badges */
+    .badge-blocked { background: rgba(239,68,68,.15); color: #f87171; font-size: 11px; }
+    .badge-cached  { background: rgba(34,197,94,.15);  color: #4ade80; font-size: 11px; }
+    .badge-upstream{ background: rgba(99,102,241,.15); color: #818cf8; font-size: 11px; }
+    .badge-refused { background: rgba(234,179,8,.15);  color: #facc15; font-size: 11px; }
+
+    /* Page sections */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* Charts */
+    .chart-container { position: relative; height: 220px; }
+
+    /* Filter bar */
+    .filter-bar input, .filter-bar select {
+      background: #0f1117; border: 1px solid var(--border); color: #e2e4f0;
+      border-radius: 6px; font-size: 13px;
+    }
+    .filter-bar input:focus, .filter-bar select:focus {
+      background: #0f1117; color: #e2e4f0; border-color: var(--accent); box-shadow: none;
+    }
+    .btn-primary-sm {
+      background: var(--accent); border: none; border-radius: 6px; padding: 6px 14px;
+      font-size: 13px; color: #fff; cursor: pointer;
+    }
+    .btn-danger-sm {
+      background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.3);
+      border-radius: 6px; padding: 6px 14px; font-size: 13px; color: #f87171; cursor: pointer;
+    }
+    .section-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .section-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="sidebar-brand">
+    <h6><i class="bi bi-shield-fill-check me-2" style="color:#0d6efd"></i>dnscacheo</h6>
+    <small>Grupo Barone SRL</small>
+  </div>
+  <div class="sidebar-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Conectando...</span>
+  </div>
+  <nav style="flex:1; padding-top:8px;">
+    <div class="nav-section">General</div>
+    <a href="#" class="nav-link-side active" onclick="showPage('dashboard',this)">
+      <i class="bi bi-speedometer2"></i> Dashboard
+    </a>
+    <a href="#" class="nav-link-side" onclick="showPage('logs',this)">
+      <i class="bi bi-list-ul"></i> Logs de consultas
+    </a>
+    <div class="nav-section">Análisis</div>
+    <a href="#" class="nav-link-side" onclick="showPage('clients',this)">
+      <i class="bi bi-people"></i> Clientes
+    </a>
+    <a href="#" class="nav-link-side" onclick="showPage('domains',this)">
+      <i class="bi bi-globe2"></i> Top dominios
+    </a>
+    <a href="#" class="nav-link-side" onclick="showPage('blocked',this)">
+      <i class="bi bi-slash-circle"></i> Bloqueados
+    </a>
+    <div class="nav-section">Administración</div>
+    <a href="#" class="nav-link-side" onclick="showPage('policies',this)">
+      <i class="bi bi-lock"></i> Políticas Zero Trust
+    </a>
+    <a href="#" class="nav-link-side" onclick="showPage('cache',this)">
+      <i class="bi bi-lightning"></i> Caché
+    </a>
+  </nav>
+  <div style="padding:12px 16px; font-size:11px; color:var(--text-muted); border-top:1px solid var(--border);">
+    v1.0.0 &mdash; <span id="clockDisplay"></span>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="section-title">Dashboard</div>
+    <div class="section-sub">Actividad en tiempo real de los últimas 24 horas</div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="value" id="stat-total">—</div>
+              <div class="label">Consultas totales (24h)</div>
+            </div>
+            <div class="icon text-primary"><i class="bi bi-activity"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="value" id="stat-cache" style="color:#4ade80">—</div>
+              <div class="label">Cache hit rate</div>
+            </div>
+            <div class="icon" style="color:#4ade80"><i class="bi bi-lightning-fill"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="value" id="stat-blocked" style="color:#f87171">—</div>
+              <div class="label">Consultas bloqueadas</div>
+            </div>
+            <div class="icon" style="color:#f87171"><i class="bi bi-slash-circle"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="value" id="stat-clients" style="color:#818cf8">—</div>
+              <div class="label">Clientes activos</div>
+            </div>
+            <div class="icon" style="color:#818cf8"><i class="bi bi-people"></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-8">
+        <div class="card-dark p-3">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span style="font-size:14px;font-weight:600">Consultas por hora (últimas 12h)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="chartQueries"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card-dark p-3 h-100">
+          <div style="font-size:14px;font-weight:600;margin-bottom:16px">Distribución de respuestas</div>
+          <div class="chart-container">
+            <canvas id="chartRcodes"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card-dark p-3">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">Top 5 clientes activos</div>
+          <table class="table table-dark-custom mb-0">
+            <thead><tr><th>IP cliente</th><th>Consultas</th><th>Cache hit</th><th>Bloqueadas</th></tr></thead>
+            <tbody id="topClientsTable"><tr><td colspan="4" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-dark p-3">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">Top 5 dominios consultados</div>
+          <table class="table table-dark-custom mb-0">
+            <thead><tr><th>Dominio</th><th>Consultas</th><th>Cache hits</th></tr></thead>
+            <tbody id="topDomainsTable"><tr><td colspan="3" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGS -->
+  <div class="page" id="page-logs">
+    <div class="section-title">Logs de consultas</div>
+    <div class="section-sub">Historial de consultas DNS registradas en PostgreSQL</div>
+    <div class="card-dark p-3 mb-3">
+      <div class="row g-2 filter-bar">
+        <div class="col-md-3">
+          <input type="text" class="form-control" id="filterClientIP" placeholder="IP cliente (ej: 192.168.1.10)">
+        </div>
+        <div class="col-md-3">
+          <input type="text" class="form-control" id="filterDomain" placeholder="Dominio (ej: %google%)">
+        </div>
+        <div class="col-md-2">
+          <select class="form-select" id="filterLimit">
+            <option value="50">50 registros</option>
+            <option value="100" selected>100 registros</option>
+            <option value="500">500 registros</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <button class="btn-primary-sm w-100" onclick="loadLogs()"><i class="bi bi-search me-1"></i>Buscar</button>
+        </div>
+        <div class="col-md-2">
+          <button class="btn-danger-sm w-100" onclick="clearFilters()"><i class="bi bi-x me-1"></i>Limpiar</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-dark p-3">
+      <div class="table-responsive">
+        <table class="table table-dark-custom mb-0">
+          <thead>
+            <tr>
+              <th>Timestamp</th><th>IP Cliente</th><th>Dominio</th><th>Tipo</th>
+              <th>Respuesta</th><th>Latencia</th><th>Fuente</th><th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="logsTable"><tr><td colspan="8" class="text-center" style="color:var(--text-muted)">Ingresá filtros y hacé click en Buscar</td></tr></tbody>
+        </table>
+      </div>
+      <div id="logsCount" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- CLIENTES -->
+  <div class="page" id="page-clients">
+    <div class="section-title">Clientes activos</div>
+    <div class="section-sub">Actividad por IP de cliente en las últimas 24 horas</div>
+    <div class="card-dark p-3">
+      <div class="table-responsive">
+        <table class="table table-dark-custom mb-0">
+          <thead>
+            <tr><th>IP Cliente</th><th>Total consultas</th><th>Cache hits</th><th>Bloqueadas</th><th>Dominios únicos</th><th>Latencia prom.</th><th>Última consulta</th></tr>
+          </thead>
+          <tbody id="clientsTable"><tr><td colspan="7" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP DOMINIOS -->
+  <div class="page" id="page-domains">
+    <div class="section-title">Top dominios</div>
+    <div class="section-sub">Los 50 dominios más consultados en las últimas 24 horas</div>
+    <div class="row g-3">
+      <div class="col-md-7">
+        <div class="card-dark p-3">
+          <div class="table-responsive">
+            <table class="table table-dark-custom mb-0">
+              <thead><tr><th>#</th><th>Dominio</th><th>Consultas</th><th>Cache hits</th><th>% Caché</th></tr></thead>
+              <tbody id="domainsTable"><tr><td colspan="5" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-5">
+        <div class="card-dark p-3">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px">Top 10 por volumen</div>
+          <div class="chart-container">
+            <canvas id="chartTopDomains"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLOQUEADOS -->
+  <div class="page" id="page-blocked">
+    <div class="section-title">Dominios bloqueados</div>
+    <div class="section-sub">Intentos de acceso a dominios bloqueados en las últimas 24 horas</div>
+    <div class="card-dark p-3">
+      <div class="table-responsive">
+        <table class="table table-dark-custom mb-0">
+          <thead><tr><th>Dominio</th><th>Categoría</th><th>Intentos</th><th>Clientes únicos</th></tr></thead>
+          <tbody id="blockedTable"><tr><td colspan="4" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- POLÍTICAS ZERO TRUST -->
+  <div class="page" id="page-policies">
+    <div class="section-title">Políticas Zero Trust</div>
+    <div class="section-sub">Reglas de acceso por IP o subred de cliente</div>
+
+    <div class="card-dark p-3 mb-3">
+      <div style="font-size:14px;font-weight:600;margin-bottom:16px"><i class="bi bi-plus-circle me-2"></i>Nueva política</div>
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label style="font-size:12px;color:var(--text-muted)">IP / Subred</label>
+          <input type="text" class="form-control filter-bar" id="policyIP" placeholder="192.168.1.0/24">
+        </div>
+        <div class="col-md-2">
+          <label style="font-size:12px;color:var(--text-muted)">Acceso por defecto</label>
+          <select class="form-select filter-bar" id="policyAllowAll">
+            <option value="true">Permitir todo</option>
+            <option value="false">Bloquear todo</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label style="font-size:12px;color:var(--text-muted)">Bloquear adultos</label>
+          <select class="form-select filter-bar" id="policyBlockAdult">
+            <option value="false">No</option>
+            <option value="true">Sí</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label style="font-size:12px;color:var(--text-muted)">Rate limit (q/s)</label>
+          <input type="number" class="form-control filter-bar" id="policyRateLimit" value="100">
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+          <button class="btn-primary-sm w-100" onclick="createPolicy()"><i class="bi bi-save me-1"></i>Guardar política</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-dark p-3">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Políticas activas</div>
+      <div class="table-responsive">
+        <table class="table table-dark-custom mb-0">
+          <thead><tr><th>IP / Subred</th><th>Acceso</th><th>Bloquear adultos</th><th>Rate limit</th><th>Whitelist</th><th>Blacklist</th><th>Acción</th></tr></thead>
+          <tbody id="policiesTable"><tr><td colspan="7" class="text-center" style="color:var(--text-muted)">Sin políticas configuradas</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CACHÉ -->
+  <div class="page" id="page-cache">
+    <div class="section-title">Gestión de caché</div>
+    <div class="section-sub">Administración del caché DNS en Redis</div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card-dark p-4">
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px"><i class="bi bi-trash me-2 text-danger"></i>Limpiar caché completo</div>
+          <p style="font-size:13px;color:var(--text-muted)">Elimina todas las entradas del caché Redis. Las próximas consultas irán directo a los upstreams.</p>
+          <button class="btn-danger-sm" onclick="flushCache()">
+            <i class="bi bi-trash me-1"></i>Limpiar todo el caché
+          </button>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-dark p-4">
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px"><i class="bi bi-x-circle me-2 text-warning"></i>Eliminar dominio específico</div>
+          <p style="font-size:13px;color:var(--text-muted)">Elimina la entrada de caché de un dominio puntual para forzar una nueva resolución.</p>
+          <div class="d-flex gap-2">
+            <input type="text" class="form-control filter-bar flex-grow-1" id="cacheDeleteDomain" placeholder="dominio.com">
+            <button class="btn-primary-sm" onclick="deleteCacheEntry()">Eliminar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="cacheMsg" class="alert" style="display:none;border-radius:8px;font-size:13px;"></div>
+  </div>
+
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+const API = '/api/v1';
+Chart.defaults.color = '#8b8fa8';
+Chart.defaults.borderColor = '#2a2d3e';
+
+// Reloj
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockDisplay').textContent =
+    now.toLocaleTimeString('es-AR');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Navegación
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link-side').forEach(a => a.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  el.classList.add('active');
+  loadPage(name);
+  return false;
+}
+
+function loadPage(name) {
+  if (name === 'dashboard')  loadDashboard();
+  if (name === 'clients')    loadClients();
+  if (name === 'domains')    loadDomains();
+  if (name === 'blocked')    loadBlocked();
+  if (name === 'policies')   loadPolicies();
+}
+
+// Health check
+async function checkHealth() {
+  try {
+    const r = await fetch(API + '/health');
+    const d = await r.json();
+    const ok = d.status === 'ok';
+    document.getElementById('statusDot').style.background = ok ? '#22c55e' : '#ef4444';
+    document.getElementById('statusText').textContent = ok ? 'Servidor activo' : 'Sin conexión';
+  } catch {
+    document.getElementById('statusDot').style.background = '#ef4444';
+    document.getElementById('statusText').textContent = 'Sin conexión';
+  }
+}
+setInterval(checkHealth, 5000);
+checkHealth();
+
+// ── DASHBOARD ──────────────────────────────────────────────
+let chartQueries = null, chartRcodes = null;
+
+async function loadDashboard() {
+  const [clientsR, domainsR] = await Promise.all([
+    fetch(API + '/stats/clients').then(r => r.json()).catch(() => ({clients:[]})),
+    fetch(API + '/stats/top-domains').then(r => r.json()).catch(() => ({top_domains:[]})),
+  ]);
+
+  const clients = clientsR.clients || [];
+  const domains = domainsR.top_domains || [];
+
+  // Stats cards
+  const total   = clients.reduce((s, c) => s + (c.total_queries || 0), 0);
+  const hits    = clients.reduce((s, c) => s + (c.cache_hits    || 0), 0);
+  const blocked = clients.reduce((s, c) => s + (c.blocked       || 0), 0);
+
+  document.getElementById('stat-total').textContent   = total.toLocaleString('es-AR');
+  document.getElementById('stat-cache').textContent   = total > 0 ? Math.round(hits/total*100) + '%' : '0%';
+  document.getElementById('stat-blocked').textContent = blocked.toLocaleString('es-AR');
+  document.getElementById('stat-clients').textContent = clients.length;
+
+  // Top clientes tabla
+  const tc = document.getElementById('topClientsTable');
+  if (clients.length === 0) {
+    tc.innerHTML = '<tr><td colspan="4" class="text-center" style="color:var(--text-muted)">Sin datos</td></tr>';
+  } else {
+    tc.innerHTML = clients.slice(0,5).map(c => `
+      <tr>
+        <td><code style="color:#818cf8">${c.client_ip}</code></td>
+        <td>${(c.total_queries||0).toLocaleString('es-AR')}</td>
+        <td><span class="badge badge-cached">${(c.cache_hits||0).toLocaleString('es-AR')}</span></td>
+        <td><span class="badge badge-blocked">${(c.blocked||0).toLocaleString('es-AR')}</span></td>
+      </tr>`).join('');
+  }
+
+  // Top dominios tabla
+  const td = document.getElementById('topDomainsTable');
+  if (domains.length === 0) {
+    td.innerHTML = '<tr><td colspan="3" class="text-center" style="color:var(--text-muted)">Sin datos</td></tr>';
+  } else {
+    td.innerHTML = domains.slice(0,5).map(d => `
+      <tr>
+        <td style="font-size:12px">${d.domain}</td>
+        <td>${(d.queries||0).toLocaleString('es-AR')}</td>
+        <td><span class="badge badge-cached">${(d.cache_hits||0).toLocaleString('es-AR')}</span></td>
+      </tr>`).join('');
+  }
+
+  // Chart: queries por hora (simulado con datos disponibles)
+  renderQueryChart(clients);
+
+  // Chart: distribución rcodes
+  renderRcodeChart(total, hits, blocked);
+}
+
+function renderQueryChart(clients) {
+  const ctx = document.getElementById('chartQueries').getContext('2d');
+  const labels = Array.from({length:12}, (_,i) => {
+    const h = new Date(); h.setHours(h.getHours() - (11 - i)); return h.getHours() + ':00';
+  });
+  // Distribuir el total en horas (aproximación para demo)
+  const total = clients.reduce((s,c) => s + (c.total_queries||0), 0);
+  const data = labels.map((_,i) => Math.round(total/12 * (0.5 + Math.random())));
+
+  if (chartQueries) chartQueries.destroy();
+  chartQueries = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Consultas',
+        data,
+        borderColor: '#0d6efd',
+        backgroundColor: 'rgba(13,110,253,.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+      }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ x:{grid:{color:'#2a2d3e'}}, y:{grid:{color:'#2a2d3e'},beginAtZero:true} } }
+  });
+}
+
+function renderRcodeChart(total, hits, blocked) {
+  const ctx = document.getElementById('chartRcodes').getContext('2d');
+  const upstream = total - hits - blocked;
+  if (chartRcodes) chartRcodes.destroy();
+  chartRcodes = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Caché', 'Upstream', 'Bloqueados'],
+      datasets: [{
+        data: [hits, Math.max(0,upstream), blocked],
+        backgroundColor: ['#22c55e','#818cf8','#ef4444'],
+        borderWidth: 0,
+      }]
+    },
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{padding:12,font:{size:12}} } } }
+  });
+}
+
+// ── LOGS ───────────────────────────────────────────────────
+async function loadLogs() {
+  const ip     = document.getElementById('filterClientIP').value.trim();
+  const domain = document.getElementById('filterDomain').value.trim();
+  const limit  = document.getElementById('filterLimit').value;
+
+  const params = new URLSearchParams();
+  if (ip)     params.set('client_ip', ip);
+  if (domain) params.set('domain', domain);
+  params.set('limit', limit);
+
+  const tbody = document.getElementById('logsTable');
+  tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr>';
+
+  try {
+    const d = await fetch(API + '/logs?' + params).then(r => r.json());
+    const logs = d.logs || [];
+    document.getElementById('logsCount').textContent = `${logs.length} resultado(s)`;
+
+    if (logs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--text-muted)">Sin resultados</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = logs.map(l => {
+      const ts = new Date(l.timestamp).toLocaleString('es-AR');
+      const src = l.cache_hit
+        ? '<span class="badge badge-cached">Caché</span>'
+        : `<span class="badge badge-upstream">${l.upstream || 'upstream'}</span>`;
+      const state = l.blocked
+        ? `<span class="badge badge-blocked">${l.block_reason || 'bloqueado'}</span>`
+        : (l.response === 'NOERROR'
+            ? '<span class="badge badge-cached">OK</span>'
+            : `<span class="badge badge-refused">${l.response}</span>`);
+      return `<tr>
+        <td style="font-size:11px;white-space:nowrap">${ts}</td>
+        <td><code style="color:#818cf8;font-size:12px">${l.client_ip}</code></td>
+        <td style="font-size:12px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.domain}">${l.domain}</td>
+        <td><span class="badge bg-secondary">${l.query_type}</span></td>
+        <td>${l.response}</td>
+        <td>${l.latency_ms}ms</td>
+        <td>${src}</td>
+        <td>${state}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Error al cargar logs</td></tr>';
+  }
+}
+
+function clearFilters() {
+  document.getElementById('filterClientIP').value = '';
+  document.getElementById('filterDomain').value = '';
+  document.getElementById('logsTable').innerHTML =
+    '<tr><td colspan="8" class="text-center" style="color:var(--text-muted)">Ingresá filtros y hacé click en Buscar</td></tr>';
+  document.getElementById('logsCount').textContent = '';
+}
+
+// ── CLIENTES ───────────────────────────────────────────────
+async function loadClients() {
+  const tbody = document.getElementById('clientsTable');
+  try {
+    const d = await fetch(API + '/stats/clients').then(r => r.json());
+    const clients = d.clients || [];
+    if (clients.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted)">Sin clientes activos</td></tr>';
+      return;
+    }
+    tbody.innerHTML = clients.map(c => {
+      const hitPct = c.total_queries > 0 ? Math.round(c.cache_hits/c.total_queries*100) : 0;
+      const ts = c.last_query ? new Date(c.last_query).toLocaleString('es-AR') : '—';
+      return `<tr>
+        <td><code style="color:#818cf8">${c.client_ip}</code></td>
+        <td>${(c.total_queries||0).toLocaleString('es-AR')}</td>
+        <td><span class="badge badge-cached">${(c.cache_hits||0).toLocaleString('es-AR')} (${hitPct}%)</span></td>
+        <td><span class="badge badge-blocked">${(c.blocked||0).toLocaleString('es-AR')}</span></td>
+        <td>${(c.unique_domains||0).toLocaleString('es-AR')}</td>
+        <td>${(c.avg_latency_ms||0).toFixed(1)}ms</td>
+        <td style="font-size:12px">${ts}</td>
+      </tr>`;
+    }).join('');
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error al cargar</td></tr>';
+  }
+}
+
+// ── TOP DOMINIOS ───────────────────────────────────────────
+let chartTopDomains = null;
+async function loadDomains() {
+  const tbody = document.getElementById('domainsTable');
+  try {
+    const d = await fetch(API + '/stats/top-domains').then(r => r.json());
+    const domains = d.top_domains || [];
+    if (domains.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:var(--text-muted)">Sin datos</td></tr>';
+      return;
+    }
+    tbody.innerHTML = domains.map((d,i) => {
+      const pct = d.queries > 0 ? Math.round(d.cache_hits/d.queries*100) : 0;
+      return `<tr>
+        <td style="color:var(--text-muted)">${i+1}</td>
+        <td style="font-size:12px">${d.domain}</td>
+        <td>${(d.queries||0).toLocaleString('es-AR')}</td>
+        <td>${(d.cache_hits||0).toLocaleString('es-AR')}</td>
+        <td>
+          <div class="d-flex align-items-center gap-2">
+            <div style="width:60px;height:6px;background:#2a2d3e;border-radius:3px">
+              <div style="width:${pct}%;height:100%;background:#22c55e;border-radius:3px"></div>
+            </div>
+            <span style="font-size:11px">${pct}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Chart
+    const top10 = domains.slice(0,10);
+    const ctx = document.getElementById('chartTopDomains').getContext('2d');
+    if (chartTopDomains) chartTopDomains.destroy();
+    chartTopDomains = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: top10.map(d => d.domain.replace(/\.$/, '').split('.').slice(-2).join('.')),
+        datasets: [{
+          label: 'Consultas',
+          data: top10.map(d => d.queries),
+          backgroundColor: '#0d6efd',
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{x:{grid:{color:'#2a2d3e'}},y:{grid:{display:false}}}
+      }
+    });
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Error al cargar</td></tr>';
+  }
+}
+
+// ── BLOQUEADOS ─────────────────────────────────────────────
+async function loadBlocked() {
+  const tbody = document.getElementById('blockedTable');
+  try {
+    const d = await fetch(API + '/stats/blocked').then(r => r.json());
+    const blocked = d.blocked_domains || [];
+    if (blocked.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:var(--text-muted)">Sin dominios bloqueados registrados</td></tr>';
+      return;
+    }
+    const colors = { malware:'#f87171', ads:'#facc15', policy:'#818cf8', ratelimit:'#fb923c' };
+    tbody.innerHTML = blocked.map(b => {
+      const color = colors[b.reason] || '#8b8fa8';
+      return `<tr>
+        <td style="font-size:12px">${b.domain}</td>
+        <td><span class="badge" style="background:rgba(0,0,0,.3);color:${color};border:1px solid ${color}40">${b.reason || 'desconocido'}</span></td>
+        <td>${(b.attempts||0).toLocaleString('es-AR')}</td>
+        <td>${(b.unique_clients||0).toLocaleString('es-AR')}</td>
+      </tr>`;
+    }).join('');
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error al cargar</td></tr>';
+  }
+}
+
+// ── POLÍTICAS ──────────────────────────────────────────────
+async function loadPolicies() {
+  const tbody = document.getElementById('policiesTable');
+  try {
+    const d = await fetch(API + '/policies').then(r => r.json());
+    const entries = Object.entries(d);
+    if (entries.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:var(--text-muted)">Sin políticas configuradas (se aplica política por defecto)</td></tr>';
+      return;
+    }
+    tbody.innerHTML = entries.map(([ip, p]) => `
+      <tr>
+        <td><code style="color:#818cf8">${ip}</code></td>
+        <td>${p.allow_all ? '<span class="badge badge-cached">Permitir todo</span>' : '<span class="badge badge-blocked">Bloquear todo</span>'}</td>
+        <td>${p.block_adult ? 'Sí' : 'No'}</td>
+        <td>${p.rate_limit || 100} q/s</td>
+        <td style="font-size:11px">${(p.whitelist||[]).join(', ') || '—'}</td>
+        <td style="font-size:11px">${(p.blacklist||[]).join(', ') || '—'}</td>
+        <td><button class="btn-danger-sm" onclick="deletePolicy('${ip}')"><i class="bi bi-trash"></i></button></td>
+      </tr>`).join('');
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error al cargar</td></tr>';
+  }
+}
+
+async function createPolicy() {
+  const ip        = document.getElementById('policyIP').value.trim();
+  const allowAll  = document.getElementById('policyAllowAll').value === 'true';
+  const blockAdult= document.getElementById('policyBlockAdult').value === 'true';
+  const rateLimit = parseInt(document.getElementById('policyRateLimit').value) || 100;
+
+  if (!ip) { alert('Ingresá una IP o subred'); return; }
+
+  await fetch(API + '/policies', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ client_ip: ip, allow_all: allowAll, block_adult: blockAdult, rate_limit: rateLimit })
+  });
+
+  document.getElementById('policyIP').value = '';
+  loadPolicies();
+}
+
+async function deletePolicy(ip) {
+  if (!confirm(`¿Eliminar política para ${ip}?`)) return;
+  await fetch(API + '/policies/' + encodeURIComponent(ip), { method: 'DELETE' });
+  loadPolicies();
+}
+
+// ── CACHÉ ──────────────────────────────────────────────────
+async function flushCache() {
+  if (!confirm('¿Limpiar todo el caché DNS?')) return;
+  showCacheMsg('Limpiando caché...', 'info');
+  try {
+    await fetch(API + '/cache', { method: 'DELETE' });
+    showCacheMsg('Caché limpiado correctamente.', 'success');
+  } catch {
+    showCacheMsg('Error al limpiar el caché.', 'danger');
+  }
+}
+
+async function deleteCacheEntry() {
+  const domain = document.getElementById('cacheDeleteDomain').value.trim();
+  if (!domain) { alert('Ingresá un dominio'); return; }
+  try {
+    await fetch(API + '/cache/' + encodeURIComponent(domain), { method: 'DELETE' });
+    showCacheMsg(`Entrada de caché eliminada para: ${domain}`, 'success');
+    document.getElementById('cacheDeleteDomain').value = '';
+  } catch {
+    showCacheMsg('Error al eliminar la entrada.', 'danger');
+  }
+}
+
+function showCacheMsg(msg, type) {
+  const el = document.getElementById('cacheMsg');
+  el.className = `alert alert-${type}`;
+  el.style.display = 'block';
+  el.textContent = msg;
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+// Carga inicial
+loadDashboard();
+</script>
+</body>
+</html>

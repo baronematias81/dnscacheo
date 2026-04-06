@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"embed"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,9 @@ import (
 	"github.com/baronematias81/dnscacheo/internal/policy"
 	"github.com/baronematias81/dnscacheo/internal/querylog"
 )
+
+//go:embed static
+var staticFiles embed.FS
 
 type API struct {
 	cache  *cache.RedisCache
@@ -35,6 +39,12 @@ func New(c *cache.RedisCache, p *policy.Engine, ql *querylog.QueryLogger, db *sq
 }
 
 func (a *API) setupRoutes() {
+	// Panel web (archivo embebido)
+	a.router.GET("/", func(c *gin.Context) {
+		data, _ := staticFiles.ReadFile("static/index.html")
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+	})
+
 	v1 := a.router.Group("/api/v1")
 
 	// Caché
