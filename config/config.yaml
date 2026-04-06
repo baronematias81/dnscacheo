@@ -1,21 +1,34 @@
 server:
-  listen: "0.0.0.0:53"
-  workers: 50
-  timeout: 5s
+  # ── IPv4 ─────────────────────────────────────────────────
+  listen_udp4: "0.0.0.0:53"
+  listen_tcp4: "0.0.0.0:53"
+
+  # ── IPv6 ─────────────────────────────────────────────────
+  ipv6_enabled: true
+  listen_udp6: "[::]:53"
+  listen_tcp6: "[::]:53"
+
+  timeout: "2s"
+
+  # Upstreams IPv4
+  upstreams4:
+    - "1.1.1.1:53"       # Cloudflare
+    - "8.8.8.8:53"       # Google
+    - "9.9.9.9:53"       # Quad9
+
+  # Upstreams IPv6 (se usan cuando el cliente conecta por IPv6)
+  upstreams6:
+    - "[2606:4700:4700::1111]:53"   # Cloudflare IPv6
+    - "[2606:4700:4700::1001]:53"   # Cloudflare IPv6 secundario
+    - "[2001:4860:4860::8888]:53"   # Google IPv6
+    - "[2001:4860:4860::8844]:53"   # Google IPv6 secundario
+    - "[2620:fe::fe]:53"            # Quad9 IPv6
 
 cache:
   redis_url: "redis://localhost:6379"
   default_ttl: 300
   max_ttl: 86400
-  prefetch_threshold: 10  # segundos antes de expirar, hace prefetch
-
-upstream:
-  servers:
-    - "1.1.1.1:53"
-    - "8.8.8.8:53"
-    - "9.9.9.9:53"
-  strategy: "failover"  # failover | round-robin
-  timeout: 2s
+  prefetch_threshold: 10
 
 database:
   host: "localhost"
@@ -27,30 +40,33 @@ database:
 # ── TLS (compartido por DoT y DoH) ────────────────────────
 tls:
   enabled: false
-  cert_file: "certs/server.crt"   # dejar vacío para autogenerar
-  key_file:  "certs/server.key"   # dejar vacío para autogenerar
-  auto_generate: true             # genera cert autofirmado si no existe
-  min_version: "1.2"              # "1.2" | "1.3"
-  sans:                           # IPs/hostnames en el cert autofirmado
+  cert_file: "certs/server.crt"
+  key_file:  "certs/server.key"
+  auto_generate: true
+  min_version: "1.2"
+  sans:
     - "localhost"
     - "127.0.0.1"
-    # - "dns.midominio.com"
-    # - "192.168.1.1"
+    - "::1"                         # loopback IPv6
+    # - "dns.grupobaron.com.ar"
+    # - "2001:db8::1"               # IP pública IPv6
 
 # ── DNS over TLS (DoT) — RFC 7858 ─────────────────────────
 dot:
   enabled: false
   listen: "0.0.0.0:853"
+  listen_ipv6: "[::]:853"           # DoT también en IPv6
+  ipv6_enabled: true
   timeout: "10s"
 
 # ── DNS over HTTPS (DoH) — RFC 8484 ───────────────────────
 doh:
   enabled: false
   listen: "0.0.0.0:443"
+  listen_ipv6: "[::]:443"           # DoH también en IPv6
+  ipv6_enabled: true
   path: "/dns-query"
-  # listen_plain permite recibir DoH en HTTP plano (para usar detrás de
-  # un proxy TLS externo como nginx o Traefik)
-  listen_plain: ""   # ej: "0.0.0.0:8053"
+  listen_plain: ""                  # HTTP plano para proxy TLS externo
 
 filter:
   enabled: true
@@ -63,17 +79,17 @@ filter:
 
 zero_trust:
   enabled: true
-  require_encrypted: false   # rechazar consultas no cifradas (DoT/DoH)
-  default_policy: "allow"    # allow | block
+  require_encrypted: false
+  default_policy: "allow"
   anomaly_detection: true
 
 tunnel_detection:
   enabled: true
   entropy_min: 3.8
   label_len_min: 45
-  unique_subs_window: 60   # segundos
+  unique_subs_window: 60
   unique_subs_min: 40
-  query_rate_window: 60    # segundos
+  query_rate_window: 60
   query_rate_min: 150
 
 logging:

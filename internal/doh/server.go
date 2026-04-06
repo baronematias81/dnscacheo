@@ -18,12 +18,13 @@ import (
 
 // Config parámetros del servidor DoH
 type Config struct {
-	Enabled bool   `yaml:"enabled"`
-	Listen  string `yaml:"listen"`  // default: "0.0.0.0:443"
-	Path    string `yaml:"path"`    // default: "/dns-query"
-	// Si ListenPlain está habilitado, también escucha HTTP en otro puerto
-	// para clientes que ya tienen DoH configurado con proxy TLS externo
-	ListenPlain string `yaml:"listen_plain"` // ej: "0.0.0.0:8053" (sin TLS)
+	Enabled     bool   `yaml:"enabled"`
+	Listen      string `yaml:"listen"`       // default: "0.0.0.0:443"
+	IPv6Enabled bool   `yaml:"ipv6_enabled"`
+	ListenIPv6  string `yaml:"listen_ipv6"`  // default: "[::]:443"
+	Path        string `yaml:"path"`         // default: "/dns-query"
+	// ListenPlain: HTTP plano para terminar TLS en proxy externo (nginx/Traefik)
+	ListenPlain string `yaml:"listen_plain"` // ej: "0.0.0.0:8053"
 }
 
 // Server es el servidor DoH
@@ -39,46 +40,57 @@ func New(cfg Config, tlsCfg *tls.Config, handler dns.Handler) *Server {
 	if cfg.Listen == "" {
 		cfg.Listen = "0.0.0.0:443"
 	}
+	if cfg.ListenIPv6 == "" {
+		cfg.ListenIPv6 = "[::]:443"
+	}
 	if cfg.Path == "" {
 		cfg.Path = "/dns-query"
 	}
 	return &Server{cfg: cfg, tlsCfg: tlsCfg, handler: handler}
 }
 
-// ListenAndServe inicia el servidor HTTPS (y opcionalmente el HTTP plano)
+// ListenAndServe inicia el servidor HTTPS en IPv4, IPv6 y opcionalmente HTTP plano
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.cfg.Path, s.serveDNS)
 
-	s.https = &http.Server{
-		Addr:         s.cfg.Listen,
-		Handler:      mux,
-		TLSConfig:    s.tlsCfg,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
-		IdleTimeout:  30 * time.Second,
-	}
-
-	// Servidor HTTP plano (opcional, para terminar TLS en un proxy externo)
+	// HTTP plano (proxy externo)
 	if s.cfg.ListenPlain != "" {
 		plainMux := http.NewServeMux()
 		plainMux.HandleFunc(s.cfg.Path, s.serveDNS)
 		s.plain = &http.Server{
-			Addr:         s.cfg.ListenPlain,
-			Handler:      plainMux,
-			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 5 * time.Second,
+			Addr: s.cfg.ListenPlain, Handler: plainMux,
+			ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
 		}
 		go s.plain.ListenAndServe()
 	}
 
-	// Necesitamos que el TLSConfig ya tenga el cert cargado, así que
-	// usamos ListenAndServeTLS con strings vacíos (el cert viene en TLSConfig)
-	ln, err := tls.Listen("tcp", s.cfg.Listen, s.tlsCfg)
-	if err != nil {
-		return err
+	errCh := make(chan error, 2)
+
+	// HTTPS IPv4
+	startHTTPS := func(addr string) {
+		ln, err := tls.Listen("tcp", addr, s.tlsCfg)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		srv := &http.Server{
+			Handler: mux, TLSConfig: s.tlsCfg,
+			ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
+			IdleTimeout: 30 * time.Second,
+		}
+		s.https = srv
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
 	}
-	return s.https.Serve(ln)
+
+	go startHTTPS(s.cfg.Listen)
+	if s.cfg.IPv6Enabled {
+		go startHTTPS(s.cfg.ListenIPv6)
+	}
+
+	return <-errCh
 }
 
 func (s *Server) serveDNS(w http.ResponseWriter, r *http.Request) {

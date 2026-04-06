@@ -26,8 +26,14 @@ import (
 // Config estructura completa del archivo config.yaml
 type Config struct {
 	Server struct {
-		Listen  string `yaml:"listen"`
-		Workers int    `yaml:"workers"`
+		ListenUDP4  string   `yaml:"listen_udp4"`
+		ListenTCP4  string   `yaml:"listen_tcp4"`
+		IPv6Enabled bool     `yaml:"ipv6_enabled"`
+		ListenUDP6  string   `yaml:"listen_udp6"`
+		ListenTCP6  string   `yaml:"listen_tcp6"`
+		Upstreams4  []string `yaml:"upstreams4"`
+		Upstreams6  []string `yaml:"upstreams6"`
+		Timeout     string   `yaml:"timeout"`
 	} `yaml:"server"`
 
 	Cache struct {
@@ -52,9 +58,9 @@ type Config struct {
 	} `yaml:"filter"`
 
 	ZeroTrust struct {
-		Enabled           bool   `yaml:"enabled"`
-		RequireEncrypted  bool   `yaml:"require_encrypted"`
-		DefaultPolicy     string `yaml:"default_policy"`
+		Enabled          bool   `yaml:"enabled"`
+		RequireEncrypted bool   `yaml:"require_encrypted"`
+		DefaultPolicy    string `yaml:"default_policy"`
 	} `yaml:"zero_trust"`
 
 	TunnelDetection struct {
@@ -108,56 +114,63 @@ func main() {
 	defer qlog.Close()
 
 	// ── Detección de tunneling ─────────────────────────────
-	tunnelStore    := tunnel.NewStore(postgres)
+	tunnelStore := tunnel.NewStore(postgres)
 	defer tunnelStore.Close()
 
-	tunnelThresholds := tunnel.DefaultThresholds()
-	if cfg.TunnelDetection.Enabled {
-		if cfg.TunnelDetection.EntropyMin > 0 {
-			tunnelThresholds.EntropyMin = cfg.TunnelDetection.EntropyMin
-		}
-		if cfg.TunnelDetection.LabelLenMin > 0 {
-			tunnelThresholds.LabelLenMin = cfg.TunnelDetection.LabelLenMin
-		}
-		if cfg.TunnelDetection.UniqueSubsWindow > 0 {
-			tunnelThresholds.UniqueSubsWindow = cfg.TunnelDetection.UniqueSubsWindow
-		}
-		if cfg.TunnelDetection.UniqueSubsMin > 0 {
-			tunnelThresholds.UniqueSubsMin = cfg.TunnelDetection.UniqueSubsMin
-		}
-		if cfg.TunnelDetection.QueryRateWindow > 0 {
-			tunnelThresholds.QueryRateWindow = cfg.TunnelDetection.QueryRateWindow
-		}
-		if cfg.TunnelDetection.QueryRateMin > 0 {
-			tunnelThresholds.QueryRateMin = cfg.TunnelDetection.QueryRateMin
-		}
+	th := tunnel.DefaultThresholds()
+	if t := cfg.TunnelDetection; t.Enabled {
+		if t.EntropyMin > 0      { th.EntropyMin       = t.EntropyMin }
+		if t.LabelLenMin > 0     { th.LabelLenMin       = t.LabelLenMin }
+		if t.UniqueSubsWindow > 0 { th.UniqueSubsWindow = t.UniqueSubsWindow }
+		if t.UniqueSubsMin > 0   { th.UniqueSubsMin     = t.UniqueSubsMin }
+		if t.QueryRateWindow > 0 { th.QueryRateWindow   = t.QueryRateWindow }
+		if t.QueryRateMin > 0    { th.QueryRateMin       = t.QueryRateMin }
 	}
 
-	tunnelDetector := tunnel.New(tunnelThresholds, func(a tunnel.Alert) {
+	tunnelDetector := tunnel.New(th, func(a tunnel.Alert) {
 		tunnelStore.Save(a)
 		if a.Severity == tunnel.SeverityHigh || a.Severity == tunnel.SeverityCritical {
 			appLog.Warn("DNS Tunnel detectado",
-				"client", a.ClientIP,
-				"domain", a.Domain,
-				"type", a.AlertType,
-				"score", a.Score,
-				"severity", a.Severity,
+				"client", a.ClientIP, "domain", a.Domain,
+				"type", a.AlertType, "score", a.Score, "severity", a.Severity,
 			)
 		}
 	})
 
-	// ── Resolver DNS core ──────────────────────────────────
-	dnsResolver := resolver.New(redisCache, queryFilter, policyEng, qlog, tunnelDetector)
+	// ── Resolver DNS — IPv4 + IPv6 ─────────────────────────
+	resCfg := resolver.Config{
+		ListenUDP4:  cfg.Server.ListenUDP4,
+		ListenTCP4:  cfg.Server.ListenTCP4,
+		IPv6Enabled: cfg.Server.IPv6Enabled,
+		ListenUDP6:  cfg.Server.ListenUDP6,
+		ListenTCP6:  cfg.Server.ListenTCP6,
+		Upstreams4:  cfg.Server.Upstreams4,
+		Upstreams6:  cfg.Server.Upstreams6,
+		Timeout:     cfg.Server.Timeout,
+	}
+	if len(resCfg.Upstreams4) == 0 {
+		resCfg.Upstreams4 = resolver.DefaultConfig().Upstreams4
+	}
+	if len(resCfg.Upstreams6) == 0 {
+		resCfg.Upstreams6 = resolver.DefaultConfig().Upstreams6
+	}
 
-	// ── Servidor DNS UDP/TCP (puerto 53) ───────────────────
+	dnsResolver := resolver.New(resCfg, redisCache, queryFilter, policyEng, qlog, tunnelDetector)
+
 	go func() {
-		appLog.Info("DNS UDP/TCP escuchando", "addr", cfg.Server.Listen)
+		proto := "IPv4"
+		if cfg.Server.IPv6Enabled {
+			proto = "IPv4 + IPv6"
+		}
+		appLog.Info("DNS escuchando", "proto", proto,
+			"udp4", resCfg.ListenUDP4, "tcp4", resCfg.ListenTCP4,
+			"udp6", resCfg.ListenUDP6, "tcp6", resCfg.ListenTCP6)
 		if err := dnsResolver.ListenAndServe(); err != nil {
 			appLog.Error("Error en servidor DNS", "error", err)
 		}
 	}()
 
-	// ── TLS (compartido por DoT y DoH) ─────────────────────
+	// ── TLS + DoT + DoH ────────────────────────────────────
 	var dotServer *dot.Server
 	var dohServer *doh.Server
 
@@ -169,27 +182,28 @@ func main() {
 		}
 		appLog.Info("TLS configurado correctamente")
 
-		// ── DNS over TLS (puerto 853) ──────────────────────
 		if cfg.DoT.Enabled {
 			dotServer = dot.New(cfg.DoT, tlsCfg, dnsResolver.Handler())
 			go func() {
 				appLog.Info("DoT escuchando", "addr", cfg.DoT.Listen)
+				if cfg.DoT.IPv6Enabled {
+					appLog.Info("DoT IPv6 escuchando", "addr", cfg.DoT.ListenIPv6)
+				}
 				if err := dotServer.ListenAndServe(); err != nil {
-					appLog.Error("Error en servidor DoT", "error", err)
+					appLog.Error("Error en DoT", "error", err)
 				}
 			}()
 		}
 
-		// ── DNS over HTTPS (puerto 443) ────────────────────
 		if cfg.DoH.Enabled {
 			dohServer = doh.New(cfg.DoH, tlsCfg, dnsResolver.Handler())
 			go func() {
 				appLog.Info("DoH escuchando", "addr", cfg.DoH.Listen, "path", cfg.DoH.Path)
-				if cfg.DoH.ListenPlain != "" {
-					appLog.Info("DoH HTTP plano", "addr", cfg.DoH.ListenPlain)
+				if cfg.DoH.IPv6Enabled {
+					appLog.Info("DoH IPv6 escuchando", "addr", cfg.DoH.ListenIPv6)
 				}
 				if err := dohServer.ListenAndServe(); err != nil {
-					appLog.Error("Error en servidor DoH", "error", err)
+					appLog.Error("Error en DoH", "error", err)
 				}
 			}()
 		}
@@ -197,7 +211,7 @@ func main() {
 		appLog.Warn("DoT/DoH habilitados pero tls.enabled=false — no se inician")
 	}
 
-	// ── API REST de administración (puerto 8080) ───────────
+	// ── API REST ───────────────────────────────────────────
 	adminAPI := api.New(redisCache, policyEng, qlog, tunnelStore, postgres, appLog)
 	adminAPI.SetEncryptionStatus(cfg.DoT.Enabled && cfg.TLS.Enabled, cfg.DoH.Enabled && cfg.TLS.Enabled)
 	go func() {
@@ -205,21 +219,16 @@ func main() {
 		adminAPI.Run()
 	}()
 
-	appLog.Info("dnscacheo iniciado correctamente")
+	appLog.Info("dnscacheo listo", "ipv6", cfg.Server.IPv6Enabled)
 
-	// ── Esperar señal de apagado ───────────────────────────
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 
 	appLog.Info("Apagando dnscacheo...")
 	dnsResolver.Shutdown()
-	if dotServer != nil {
-		dotServer.Shutdown()
-	}
-	if dohServer != nil {
-		dohServer.Shutdown()
-	}
+	if dotServer != nil { dotServer.Shutdown() }
+	if dohServer != nil { dohServer.Shutdown() }
 }
 
 func loadConfig(path string) (*Config, error) {

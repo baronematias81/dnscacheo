@@ -15,9 +15,11 @@ import (
 
 // Config parámetros del servidor DoT
 type Config struct {
-	Enabled bool   `yaml:"enabled"`
-	Listen  string `yaml:"listen"`   // default: "0.0.0.0:853"
-	Timeout string `yaml:"timeout"`  // default: "10s"
+	Enabled     bool   `yaml:"enabled"`
+	Listen      string `yaml:"listen"`       // default: "0.0.0.0:853"
+	IPv6Enabled bool   `yaml:"ipv6_enabled"`
+	ListenIPv6  string `yaml:"listen_ipv6"`  // default: "[::]:853"
+	Timeout     string `yaml:"timeout"`      // default: "10s"
 }
 
 // Server es el servidor DNS over TLS
@@ -33,6 +35,9 @@ func New(cfg Config, tlsCfg *tls.Config, handler dns.Handler) *Server {
 	if cfg.Listen == "" {
 		cfg.Listen = "0.0.0.0:853"
 	}
+	if cfg.ListenIPv6 == "" {
+		cfg.ListenIPv6 = "[::]:853"
+	}
 	return &Server{
 		cfg:     cfg,
 		tlsCfg:  tlsCfg,
@@ -42,29 +47,41 @@ func New(cfg Config, tlsCfg *tls.Config, handler dns.Handler) *Server {
 }
 
 func (s *Server) ListenAndServe() error {
-	ln, err := tls.Listen("tcp", s.cfg.Listen, s.tlsCfg)
-	if err != nil {
-		return err
+	addrs := []string{s.cfg.Listen}
+	if s.cfg.IPv6Enabled {
+		addrs = append(addrs, s.cfg.ListenIPv6)
 	}
-	s.listener = ln
 
-	for {
-		select {
-		case <-s.done:
-			return nil
-		default:
-		}
-		conn, err := ln.Accept()
+	errCh := make(chan error, len(addrs))
+	for _, addr := range addrs {
+		ln, err := tls.Listen("tcp", addr, s.tlsCfg)
 		if err != nil {
-			select {
-			case <-s.done:
-				return nil
-			default:
-				continue
-			}
+			return err
 		}
-		go s.handleConn(conn)
+		s.listener = ln // guardamos el último para Shutdown
+		go func(l net.Listener) {
+			for {
+				select {
+				case <-s.done:
+					return
+				default:
+				}
+				conn, err := l.Accept()
+				if err != nil {
+					select {
+					case <-s.done:
+						return
+					default:
+						continue
+					}
+				}
+				go s.handleConn(conn)
+			}
+		}(ln)
 	}
+
+	<-s.done
+	return nil
 }
 
 func (s *Server) handleConn(conn net.Conn) {
