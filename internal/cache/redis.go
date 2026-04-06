@@ -15,10 +15,12 @@ type RedisCache struct {
 	defaultTTL time.Duration
 }
 
-func NewRedisCache(cfg interface{}) *RedisCache {
-	client := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-	})
+func NewRedisCache(redisURL string) *RedisCache {
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379"
+	}
+	opt, _ := redis.ParseURL(redisURL)
+	client := redis.NewClient(opt)
 	return &RedisCache{
 		client:     client,
 		defaultTTL: 300 * time.Second,

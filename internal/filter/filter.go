@@ -14,23 +14,28 @@ var defaultBlocklists = map[string]string{
 }
 
 type Filter struct {
-	blocked map[string]bool
+	blocked map[string]string // dominio -> razón (malware, ads, etc.)
 	mu      sync.RWMutex
 	enabled bool
 }
 
-func New(cfg interface{}) *Filter {
+func New(enabled bool) *Filter {
 	f := &Filter{
-		blocked: make(map[string]bool),
-		enabled: true,
+		blocked: make(map[string]string),
+		enabled: enabled,
 	}
 	go f.loadBlocklists()
 	return f
 }
 
 func (f *Filter) IsBlocked(domain string) bool {
+	blocked, _ := f.IsBlockedWithReason(domain)
+	return blocked
+}
+
+func (f *Filter) IsBlockedWithReason(domain string) (bool, string) {
 	if !f.enabled {
-		return false
+		return false, ""
 	}
 
 	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
@@ -39,35 +44,35 @@ func (f *Filter) IsBlocked(domain string) bool {
 	defer f.mu.RUnlock()
 
 	// Verificar dominio exacto
-	if f.blocked[domain] {
-		return true
+	if reason, ok := f.blocked[domain]; ok {
+		return true, reason
 	}
 
 	// Verificar dominios padre
 	parts := strings.Split(domain, ".")
 	for i := range parts {
 		parent := strings.Join(parts[i:], ".")
-		if f.blocked[parent] {
-			return true
+		if reason, ok := f.blocked[parent]; ok {
+			return true, reason
 		}
 	}
 
-	return false
+	return false, ""
 }
 
-func (f *Filter) AddDomain(domain string) {
+func (f *Filter) AddDomain(domain, reason string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.blocked[strings.ToLower(domain)] = true
+	f.blocked[strings.ToLower(domain)] = reason
 }
 
 func (f *Filter) loadBlocklists() {
-	for _, url := range defaultBlocklists {
-		f.loadFromURL(url)
+	for category, url := range defaultBlocklists {
+		f.loadFromURL(url, category)
 	}
 }
 
-func (f *Filter) loadFromURL(url string) {
+func (f *Filter) loadFromURL(url, category string) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return
@@ -92,7 +97,7 @@ func (f *Filter) loadFromURL(url string) {
 			domain = fields[0]
 		}
 		if domain != "" && domain != "localhost" {
-			f.blocked[strings.ToLower(domain)] = true
+			f.blocked[strings.ToLower(domain)] = category
 		}
 	}
 }
