@@ -1,7 +1,5 @@
 server:
   listen: "0.0.0.0:53"
-  listen_doh: "0.0.0.0:443"
-  listen_dot: "0.0.0.0:853"
   workers: 50
   timeout: 5s
 
@@ -26,6 +24,34 @@ database:
   user: "dnscacheo"
   password: ""
 
+# ── TLS (compartido por DoT y DoH) ────────────────────────
+tls:
+  enabled: false
+  cert_file: "certs/server.crt"   # dejar vacío para autogenerar
+  key_file:  "certs/server.key"   # dejar vacío para autogenerar
+  auto_generate: true             # genera cert autofirmado si no existe
+  min_version: "1.2"              # "1.2" | "1.3"
+  sans:                           # IPs/hostnames en el cert autofirmado
+    - "localhost"
+    - "127.0.0.1"
+    # - "dns.midominio.com"
+    # - "192.168.1.1"
+
+# ── DNS over TLS (DoT) — RFC 7858 ─────────────────────────
+dot:
+  enabled: false
+  listen: "0.0.0.0:853"
+  timeout: "10s"
+
+# ── DNS over HTTPS (DoH) — RFC 8484 ───────────────────────
+doh:
+  enabled: false
+  listen: "0.0.0.0:443"
+  path: "/dns-query"
+  # listen_plain permite recibir DoH en HTTP plano (para usar detrás de
+  # un proxy TLS externo como nginx o Traefik)
+  listen_plain: ""   # ej: "0.0.0.0:8053"
+
 filter:
   enabled: true
   categories:
@@ -37,10 +63,18 @@ filter:
 
 zero_trust:
   enabled: true
-  require_encrypted: false   # forzar DoH/DoT
+  require_encrypted: false   # rechazar consultas no cifradas (DoT/DoH)
   default_policy: "allow"    # allow | block
   anomaly_detection: true
-  dns_tunnel_detection: true
+
+tunnel_detection:
+  enabled: true
+  entropy_min: 3.8
+  label_len_min: 45
+  unique_subs_window: 60   # segundos
+  unique_subs_min: 40
+  query_rate_window: 60    # segundos
+  query_rate_min: 150
 
 logging:
   level: "info"

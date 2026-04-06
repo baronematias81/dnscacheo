@@ -134,6 +134,9 @@
       <span id="tunnelBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span>
     </a>
     <div class="nav-section">Administración</div>
+    <a href="#" class="nav-link-side" onclick="showPage('encryption',this)">
+      <i class="bi bi-shield-lock"></i> Cifrado DoT / DoH
+    </a>
     <a href="#" class="nav-link-side" onclick="showPage('policies',this)">
       <i class="bi bi-lock"></i> Políticas Zero Trust
     </a>
@@ -409,6 +412,97 @@
     </div>
   </div>
 
+  <!-- CIFRADO DoT / DoH -->
+  <div class="page" id="page-encryption">
+    <div class="section-title">Cifrado DNS</div>
+    <div class="section-sub">Estado y configuración de DNS over TLS (DoT) y DNS over HTTPS (DoH)</div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card-dark p-4">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <i class="bi bi-shield-lock" style="font-size:28px;color:#0d6efd"></i>
+            <div>
+              <div style="font-size:16px;font-weight:700">DNS over TLS (DoT)</div>
+              <div style="font-size:12px;color:var(--text-muted)">RFC 7858 — Puerto 853/TCP</div>
+            </div>
+            <span id="dot-badge" class="badge ms-auto" style="font-size:12px">—</span>
+          </div>
+          <table class="table table-dark-custom mb-0" style="font-size:13px">
+            <tr><td style="color:var(--text-muted)">Protocolo</td><td>TCP con TLS</td></tr>
+            <tr><td style="color:var(--text-muted)">Puerto</td><td>853 (configurable)</td></tr>
+            <tr><td style="color:var(--text-muted)">Config</td><td><code>dot.enabled: true</code></td></tr>
+            <tr><td style="color:var(--text-muted)">Compatibilidad</td><td>Android 9+, systemd-resolved, Unbound</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-dark p-4">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <i class="bi bi-lock-fill" style="font-size:28px;color:#22c55e"></i>
+            <div>
+              <div style="font-size:16px;font-weight:700">DNS over HTTPS (DoH)</div>
+              <div style="font-size:12px;color:var(--text-muted)">RFC 8484 — Puerto 443/TCP</div>
+            </div>
+            <span id="doh-badge" class="badge ms-auto" style="font-size:12px">—</span>
+          </div>
+          <table class="table table-dark-custom mb-0" style="font-size:13px">
+            <tr><td style="color:var(--text-muted)">Método GET</td><td><code>GET /dns-query?dns=&lt;base64url&gt;</code></td></tr>
+            <tr><td style="color:var(--text-muted)">Método POST</td><td><code>POST /dns-query</code> (wire format)</td></tr>
+            <tr><td style="color:var(--text-muted)">Config</td><td><code>doh.enabled: true</code></td></tr>
+            <tr><td style="color:var(--text-muted)">Compatibilidad</td><td>Firefox, Chrome, iOS 14+, Windows 11</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-dark p-4 mb-3">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px"><i class="bi bi-file-earmark-code me-2"></i>Configuración en config.yaml</div>
+      <pre style="background:#0f1117;border:1px solid var(--border);border-radius:8px;padding:16px;font-size:12px;color:#e2e4f0;overflow-x:auto">tls:
+  enabled: true
+  cert_file: "certs/server.crt"   # vacío = autogenerar
+  key_file:  "certs/server.key"   # vacío = autogenerar
+  auto_generate: true             # genera cert autofirmado si no existe
+  min_version: "1.2"              # "1.2" | "1.3"
+  sans:
+    - "dns.miempresa.com"         # hostnames en el cert
+    - "192.168.1.1"               # IPs en el cert
+
+dot:
+  enabled: true
+  listen: "0.0.0.0:853"
+
+doh:
+  enabled: true
+  listen: "0.0.0.0:443"
+  path: "/dns-query"
+  listen_plain: "0.0.0.0:8053"   # HTTP plano para proxy TLS externo</pre>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card-dark p-4">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px"><i class="bi bi-phone me-2"></i>Configurar en Android</div>
+          <ol style="font-size:13px;color:var(--text-muted);padding-left:20px;line-height:1.8">
+            <li>Ajustes → Red e Internet → DNS privado</li>
+            <li>Seleccionar "Nombre de host del proveedor de DNS privado"</li>
+            <li>Ingresar: <code id="dot-hostname" style="color:#818cf8">dns.tuservidor.com</code></li>
+          </ol>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-dark p-4">
+          <div style="font-size:14px;font-weight:600;margin-bottom:12px"><i class="bi bi-browser-firefox me-2"></i>Configurar en Firefox</div>
+          <ol style="font-size:13px;color:var(--text-muted);padding-left:20px;line-height:1.8">
+            <li>Preferencias → General → Configuración de red</li>
+            <li>Activar "DNS sobre HTTPS"</li>
+            <li>URL personalizada: <code id="doh-url" style="color:#818cf8">https://dns.tuservidor.com/dns-query</code></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- POLÍTICAS ZERO TRUST -->
   <div class="page" id="page-policies">
     <div class="section-title">Políticas Zero Trust</div>
@@ -521,6 +615,7 @@ function loadPage(name) {
   if (name === 'blocked')    loadBlocked();
   if (name === 'policies')   loadPolicies();
   if (name === 'tunnel')     loadTunnel();
+  if (name === 'encryption') loadEncryption();
 }
 
 // Health check
@@ -888,6 +983,31 @@ function showCacheMsg(msg, type) {
   el.style.display = 'block';
   el.textContent = msg;
   setTimeout(() => el.style.display = 'none', 3000);
+}
+
+// ── CIFRADO DoT / DoH ──────────────────────────────────────
+async function loadEncryption() {
+  try {
+    const d = await fetch(API + '/health').then(r => r.json());
+    const host = window.location.hostname || 'dns.tuservidor.com';
+
+    // Mostrar hostname/URL sugeridos
+    document.getElementById('dot-hostname').textContent = host;
+    document.getElementById('doh-url').textContent = `https://${host}/dns-query`;
+
+    // Badges de estado (el servidor responde = activo)
+    const dotBadge = document.getElementById('dot-badge');
+    const dohBadge = document.getElementById('doh-badge');
+
+    // DoT activo si el servidor responde (no podemos verificar 853 desde JS)
+    dotBadge.textContent = d.dot_enabled ? 'Activo' : 'Inactivo';
+    dotBadge.style.background = d.dot_enabled ? 'rgba(34,197,94,.2)' : 'rgba(239,68,68,.2)';
+    dotBadge.style.color = d.dot_enabled ? '#4ade80' : '#f87171';
+
+    dohBadge.textContent = d.doh_enabled ? 'Activo' : 'Inactivo';
+    dohBadge.style.background = d.doh_enabled ? 'rgba(34,197,94,.2)' : 'rgba(239,68,68,.2)';
+    dohBadge.style.color = d.doh_enabled ? '#4ade80' : '#f87171';
+  } catch {}
 }
 
 // ── DNS TUNNELING ──────────────────────────────────────────

@@ -38,11 +38,16 @@ func New(c *cache.RedisCache, f *filter.Filter, p *policy.Engine, ql *querylog.Q
 	}
 }
 
+// Handler devuelve el dns.Handler para ser usado por DoT y DoH
+func (r *Resolver) Handler() dns.Handler {
+	return dns.HandlerFunc(r.handleQuery)
+}
+
 func (r *Resolver) ListenAndServe() error {
 	r.server = &dns.Server{
 		Addr:    ":53",
 		Net:     "udp",
-		Handler: dns.HandlerFunc(r.handleQuery),
+		Handler: r.Handler(),
 	}
 	return r.server.ListenAndServe()
 }

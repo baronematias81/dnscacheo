@@ -25,6 +25,8 @@ type API struct {
 	db          *sql.DB
 	log         *logger.Logger
 	router      *gin.Engine
+	dotEnabled  bool
+	dohEnabled  bool
 }
 
 func New(c *cache.RedisCache, p *policy.Engine, ql *querylog.QueryLogger, ts *tunnel.Store, db *sql.DB, log *logger.Logger) *API {
@@ -240,11 +242,19 @@ func (a *API) blockedDomains(c *gin.Context) {
 func (a *API) health(c *gin.Context) {
 	dbOK := a.db.Ping() == nil
 	c.JSON(http.StatusOK, gin.H{
-		"status":   "ok",
-		"service":  "dnscacheo",
-		"empresa":  "Grupo Barone SRL",
-		"postgres": dbOK,
+		"status":      "ok",
+		"service":     "dnscacheo",
+		"empresa":     "Grupo Barone SRL",
+		"postgres":    dbOK,
+		"dot_enabled": a.dotEnabled,
+		"doh_enabled": a.dohEnabled,
 	})
+}
+
+// SetEncryptionStatus permite a main.go informar qué protocolos están activos
+func (a *API) SetEncryptionStatus(dotEnabled, dohEnabled bool) {
+	a.dotEnabled = dotEnabled
+	a.dohEnabled = dohEnabled
 }
 
 // --- Tunnel Detection ---
