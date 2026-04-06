@@ -16,8 +16,10 @@ import (
 	"github.com/baronematias81/dnscacheo/internal/dot"
 	"github.com/baronematias81/dnscacheo/internal/filter"
 	"github.com/baronematias81/dnscacheo/internal/logger"
+	"github.com/baronematias81/dnscacheo/internal/metrics"
 	"github.com/baronematias81/dnscacheo/internal/policy"
 	"github.com/baronematias81/dnscacheo/internal/querylog"
+	"github.com/baronematias81/dnscacheo/internal/ratelimit"
 	"github.com/baronematias81/dnscacheo/internal/resolver"
 	"github.com/baronematias81/dnscacheo/internal/tlsutil"
 	"github.com/baronematias81/dnscacheo/internal/tunnel"
@@ -62,6 +64,13 @@ type Config struct {
 		RequireEncrypted bool   `yaml:"require_encrypted"`
 		DefaultPolicy    string `yaml:"default_policy"`
 	} `yaml:"zero_trust"`
+
+	RateLimit ratelimit.Config `yaml:"rate_limit"`
+
+	Metrics struct {
+		Enabled bool   `yaml:"enabled"`
+		Listen  string `yaml:"listen"`
+	} `yaml:"metrics"`
 
 	TunnelDetection struct {
 		Enabled          bool    `yaml:"enabled"`
@@ -113,6 +122,24 @@ func main() {
 	qlog        := querylog.New(postgres)
 	defer qlog.Close()
 
+	// ── Rate limiter ────────────────────────────────────────
+	rlCfg := cfg.RateLimit
+	if rlCfg.GlobalRate == 0 {
+		rlCfg = ratelimit.DefaultConfig()
+	}
+	rateLimiter := ratelimit.New(rlCfg)
+	appLog.Info("Rate limiter iniciado", "rate", rlCfg.GlobalRate, "burst", rlCfg.GlobalBurst)
+
+	// ── Métricas Prometheus ─────────────────────────────────
+	if cfg.Metrics.Enabled {
+		addr := cfg.Metrics.Listen
+		if addr == "" {
+			addr = "0.0.0.0:9090"
+		}
+		go metrics.StartServer(addr)
+		appLog.Info("Métricas Prometheus en", "addr", addr+"/metrics")
+	}
+
 	// ── Detección de tunneling ─────────────────────────────
 	tunnelStore := tunnel.NewStore(postgres)
 	defer tunnelStore.Close()
@@ -155,7 +182,7 @@ func main() {
 		resCfg.Upstreams6 = resolver.DefaultConfig().Upstreams6
 	}
 
-	dnsResolver := resolver.New(resCfg, redisCache, queryFilter, policyEng, qlog, tunnelDetector)
+	dnsResolver := resolver.New(resCfg, redisCache, queryFilter, policyEng, qlog, tunnelDetector, rateLimiter)
 
 	go func() {
 		proto := "IPv4"

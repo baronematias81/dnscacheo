@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/baronematias81/dnscacheo/internal/metrics"
 )
 
 // AlertType identifica el algoritmo que disparó la alerta
@@ -372,11 +373,12 @@ func (d *Detector) checkSuspiciousType(clientIP, domain, parent string, qtype ui
 }
 
 func (d *Detector) emit(a Alert) {
-	if d.OnAlert == nil {
-		return
-	}
 	a.Timestamp = time.Now()
-	d.OnAlert(a)
+	// Registrar en Prometheus siempre
+	metrics.TunnelAlertsTotal.WithLabelValues(string(a.AlertType), string(a.Severity)).Inc()
+	if d.OnAlert != nil {
+		d.OnAlert(a)
+	}
 }
 
 // shannonEntropy calcula la entropía de Shannon de un string

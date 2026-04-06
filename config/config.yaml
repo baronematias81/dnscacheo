@@ -68,6 +68,25 @@ doh:
   path: "/dns-query"
   listen_plain: ""                  # HTTP plano para proxy TLS externo
 
+# ── Rate Limiting (token bucket por cliente) ──────────────
+rate_limit:
+  enabled: true
+  global_rate: 100          # consultas/segundo por cliente (defecto)
+  global_burst: 200         # ráfaga máxima permitida
+  cleanup_interval: 60      # segundos entre cleanup de buckets inactivos
+  idle_timeout: 300         # segundos sin actividad para liberar bucket
+  per_client_rates:
+    # Ejemplos de reglas por subred:
+    # - cidr: "192.168.1.0/24"
+    #   rate: 500             # subred interna con límite mayor
+    #   burst: 1000
+    # - cidr: "10.0.0.0/8"
+    #   rate: 200
+    #   burst: 400
+    # - cidr: "2001:db8::/32" # subred IPv6
+    #   rate: 300
+    #   burst: 600
+
 filter:
   enabled: true
   categories:
@@ -97,6 +116,7 @@ logging:
   query_log: true
   log_file: "/var/log/dnscacheo/queries.log"
 
+# ── Métricas Prometheus ────────────────────────────���───────
 metrics:
   enabled: true
-  listen: "0.0.0.0:9090"
+  listen: "0.0.0.0:9090"   # GET /metrics para Prometheus scrape

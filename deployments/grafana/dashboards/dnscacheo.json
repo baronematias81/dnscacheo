@@ -1,0 +1,128 @@
+{
+  "title": "dnscacheo — Grupo Barone SRL",
+  "uid": "dnscacheo-main",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Consultas totales",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sum(rate(dns_queries_total[5m])) * 60", "legendFormat": "q/min" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 5000 }
+      ] } } }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Cache hit rate",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "dns_cache_hit_ratio * 100", "legendFormat": "%" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "red", "value": null }, { "color": "yellow", "value": 50 }, { "color": "green", "value": 80 }
+      ] } } }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Consultas bloqueadas (1m)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sum(rate(dns_blocked_queries_total[1m])) * 60", "legendFormat": "bloqueadas/min" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 10 }, { "color": "red", "value": 100 }
+      ] } } }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Clientes activos",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "dns_active_clients", "legendFormat": "clientes" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" } } }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Rate limitados (1m)",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "rate(dns_rate_limited_total[1m]) * 60", "legendFormat": "rechazadas/min" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 50 }
+      ] } } }
+    },
+    {
+      "id": 6, "type": "stat", "title": "Alertas tunneling activas",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sum(rate(dns_tunnel_alerts_total[5m])) * 300", "legendFormat": "alertas" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "red", "value": 1 }
+      ] } } }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Consultas por segundo",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(dns_queries_total[1m]))", "legendFormat": "total" },
+        { "expr": "rate(dns_cache_hits_total[1m])", "legendFormat": "cache hits" },
+        { "expr": "sum(rate(dns_blocked_queries_total[1m]))", "legendFormat": "bloqueadas" },
+        { "expr": "rate(dns_rate_limited_total[1m])", "legendFormat": "rate limited" }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 10 } } }
+    },
+    {
+      "id": 8, "type": "piechart", "title": "Distribución de respuestas",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
+      "targets": [
+        { "expr": "rate(dns_cache_hits_total[5m])", "legendFormat": "Caché" },
+        { "expr": "rate(dns_cache_misses_total[5m])", "legendFormat": "Upstream" },
+        { "expr": "sum(rate(dns_blocked_queries_total[5m]))", "legendFormat": "Bloqueadas" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Latencia de consultas (percentiles)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(dns_query_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(dns_query_duration_seconds_bucket[5m]))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, rate(dns_query_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Latencia por upstream",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(dns_upstream_latency_seconds_bucket[5m])) by (upstream)", "legendFormat": "{{upstream}} p95" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "IPv4 vs IPv6",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(dns_ipv4_queries_total[1m])", "legendFormat": "IPv4" },
+        { "expr": "rate(dns_ipv6_queries_total[1m])", "legendFormat": "IPv6" }
+      ]
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Consultas bloqueadas por categoría",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(dns_blocked_queries_total[1m]) by (reason)", "legendFormat": "{{reason}}" }
+      ]
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Alertas de DNS Tunneling",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(dns_tunnel_alerts_total[5m]) by (alert_type, severity)", "legendFormat": "{{severity}} — {{alert_type}}" }
+      ]
+    },
+    {
+      "id": 14, "type": "timeseries", "title": "Errores por upstream",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(dns_upstream_errors_total[1m]) by (upstream)", "legendFormat": "{{upstream}}" }
+      ]
+    }
+  ]
+}
