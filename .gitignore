@@ -1,0 +1,22 @@
+# Binarios
+dnscacheo
+*.exe
+
+# Logs
+logs/
+*.log
+
+# Variables de entorno
+.env
+*.env
+
+# Go
+vendor/
+go.sum
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.override.yml

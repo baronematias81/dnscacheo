@@ -1,0 +1,52 @@
+server:
+  listen: "0.0.0.0:53"
+  listen_doh: "0.0.0.0:443"
+  listen_dot: "0.0.0.0:853"
+  workers: 50
+  timeout: 5s
+
+cache:
+  redis_url: "redis://localhost:6379"
+  default_ttl: 300
+  max_ttl: 86400
+  prefetch_threshold: 10  # segundos antes de expirar, hace prefetch
+
+upstream:
+  servers:
+    - "1.1.1.1:53"
+    - "8.8.8.8:53"
+    - "9.9.9.9:53"
+  strategy: "failover"  # failover | round-robin
+  timeout: 2s
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "dnscacheo"
+  user: "dnscacheo"
+  password: ""
+
+filter:
+  enabled: true
+  categories:
+    malware: true
+    ads: true
+    adult: false
+    gambling: false
+  blocklist_update_interval: 24h
+
+zero_trust:
+  enabled: true
+  require_encrypted: false   # forzar DoH/DoT
+  default_policy: "allow"    # allow | block
+  anomaly_detection: true
+  dns_tunnel_detection: true
+
+logging:
+  level: "info"
+  query_log: true
+  log_file: "/var/log/dnscacheo/queries.log"
+
+metrics:
+  enabled: true
+  listen: "0.0.0.0:9090"
