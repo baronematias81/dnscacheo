@@ -17,6 +17,7 @@ import (
 	"github.com/baronematias81/dnscacheo/internal/policy"
 	"github.com/baronematias81/dnscacheo/internal/querylog"
 	"github.com/baronematias81/dnscacheo/internal/resolver"
+	"github.com/baronematias81/dnscacheo/internal/tunnel"
 )
 
 type Config struct {
@@ -83,8 +84,24 @@ func main() {
 	qlog        := querylog.New(postgres)
 	defer qlog.Close()
 
-	dnsResolver := resolver.New(redisCache, queryFilter, policyEng, qlog)
-	adminAPI    := api.New(redisCache, policyEng, qlog, postgres, appLog)
+	// Detector de DNS tunneling
+	tunnelStore    := tunnel.NewStore(postgres)
+	defer tunnelStore.Close()
+	tunnelDetector := tunnel.New(tunnel.DefaultThresholds(), func(a tunnel.Alert) {
+		tunnelStore.Save(a)
+		if a.Severity == tunnel.SeverityHigh || a.Severity == tunnel.SeverityCritical {
+			appLog.Warn("DNS Tunnel detectado",
+				"client", a.ClientIP,
+				"domain", a.Domain,
+				"type", a.AlertType,
+				"score", a.Score,
+				"severity", a.Severity,
+			)
+		}
+	})
+
+	dnsResolver := resolver.New(redisCache, queryFilter, policyEng, qlog, tunnelDetector)
+	adminAPI    := api.New(redisCache, policyEng, qlog, tunnelStore, postgres, appLog)
 
 	// Iniciar servidor DNS
 	go func() {

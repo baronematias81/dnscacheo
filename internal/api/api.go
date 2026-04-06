@@ -4,35 +4,39 @@ import (
 	"database/sql"
 	"embed"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/baronematias81/dnscacheo/internal/cache"
 	"github.com/baronematias81/dnscacheo/internal/logger"
 	"github.com/baronematias81/dnscacheo/internal/policy"
 	"github.com/baronematias81/dnscacheo/internal/querylog"
+	"github.com/baronematias81/dnscacheo/internal/tunnel"
 )
 
 //go:embed static
 var staticFiles embed.FS
 
 type API struct {
-	cache  *cache.RedisCache
-	policy *policy.Engine
-	qlog   *querylog.QueryLogger
-	db     *sql.DB
-	log    *logger.Logger
-	router *gin.Engine
+	cache       *cache.RedisCache
+	policy      *policy.Engine
+	qlog        *querylog.QueryLogger
+	tunnelStore *tunnel.Store
+	db          *sql.DB
+	log         *logger.Logger
+	router      *gin.Engine
 }
 
-func New(c *cache.RedisCache, p *policy.Engine, ql *querylog.QueryLogger, db *sql.DB, log *logger.Logger) *API {
+func New(c *cache.RedisCache, p *policy.Engine, ql *querylog.QueryLogger, ts *tunnel.Store, db *sql.DB, log *logger.Logger) *API {
 	gin.SetMode(gin.ReleaseMode)
 	a := &API{
-		cache:  c,
-		policy: p,
-		qlog:   ql,
-		db:     db,
-		log:    log,
-		router: gin.New(),
+		cache:       c,
+		policy:      p,
+		qlog:        ql,
+		tunnelStore: ts,
+		db:          db,
+		log:         log,
+		router:      gin.New(),
 	}
 	a.setupRoutes()
 	return a
@@ -61,6 +65,11 @@ func (a *API) setupRoutes() {
 	v1.GET("/stats/clients",     a.clientStats)
 	v1.GET("/stats/top-domains", a.topDomains)
 	v1.GET("/stats/blocked",     a.blockedDomains)
+
+	// Tunnel detection
+	v1.GET("/tunnel/alerts",          a.tunnelAlerts)
+	v1.POST("/tunnel/alerts/:id/resolve", a.tunnelResolve)
+	v1.GET("/tunnel/clients",         a.tunnelClients)
 
 	// Estado
 	v1.GET("/health",            a.health)
@@ -236,4 +245,43 @@ func (a *API) health(c *gin.Context) {
 		"empresa":  "Grupo Barone SRL",
 		"postgres": dbOK,
 	})
+}
+
+// --- Tunnel Detection ---
+
+func (a *API) tunnelAlerts(c *gin.Context) {
+	limit := 100
+	if l := c.Query("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = n
+		}
+	}
+	alerts, err := a.tunnelStore.ListActive(limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"alerts": alerts, "count": len(alerts)})
+}
+
+func (a *API) tunnelResolve(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido"})
+		return
+	}
+	if err := a.tunnelStore.Resolve(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "alerta resuelta", "id": id})
+}
+
+func (a *API) tunnelClients(c *gin.Context) {
+	summary, err := a.tunnelStore.ClientSummary()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"clients": summary})
 }

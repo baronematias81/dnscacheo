@@ -129,6 +129,10 @@
     <a href="#" class="nav-link-side" onclick="showPage('blocked',this)">
       <i class="bi bi-slash-circle"></i> Bloqueados
     </a>
+    <a href="#" class="nav-link-side" onclick="showPage('tunnel',this)">
+      <i class="bi bi-bug"></i> DNS Tunneling
+      <span id="tunnelBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span>
+    </a>
     <div class="nav-section">Administración</div>
     <a href="#" class="nav-link-side" onclick="showPage('policies',this)">
       <i class="bi bi-lock"></i> Políticas Zero Trust
@@ -339,6 +343,72 @@
     </div>
   </div>
 
+  <!-- DNS TUNNELING -->
+  <div class="page" id="page-tunnel">
+    <div class="section-title">Detección de DNS Tunneling</div>
+    <div class="section-sub">Alertas generadas por los algoritmos de detección en tiempo real</div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="value" id="tunnel-stat-total" style="color:#f87171">—</div>
+          <div class="label">Alertas activas</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="value" id="tunnel-stat-critical" style="color:#ef4444">—</div>
+          <div class="label">Críticas</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="value" id="tunnel-stat-high" style="color:#fb923c">—</div>
+          <div class="label">Altas</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-card">
+          <div class="value" id="tunnel-stat-clients" style="color:#818cf8">—</div>
+          <div class="label">Clientes involucrados</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-12">
+        <div class="card-dark p-3">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span style="font-size:14px;font-weight:600"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>Alertas activas</span>
+            <button class="btn-primary-sm" onclick="loadTunnel()"><i class="bi bi-arrow-clockwise me-1"></i>Actualizar</button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-dark-custom mb-0">
+              <thead>
+                <tr><th>Timestamp</th><th>IP Cliente</th><th>Dominio</th><th>Tipo detección</th><th>Severidad</th><th>Score</th><th>Detalles</th><th>Acción</th></tr>
+              </thead>
+              <tbody id="tunnelAlertsTable">
+                <tr><td colspan="8" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-dark p-3">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">Clientes con más alertas (24h)</div>
+      <div class="table-responsive">
+        <table class="table table-dark-custom mb-0">
+          <thead><tr><th>IP Cliente</th><th>Total alertas</th><th>Críticas</th><th>Altas</th><th>Score máximo</th><th>Última alerta</th></tr></thead>
+          <tbody id="tunnelClientsTable">
+            <tr><td colspan="6" class="text-center" style="color:var(--text-muted)">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- POLÍTICAS ZERO TRUST -->
   <div class="page" id="page-policies">
     <div class="section-title">Políticas Zero Trust</div>
@@ -450,6 +520,7 @@ function loadPage(name) {
   if (name === 'domains')    loadDomains();
   if (name === 'blocked')    loadBlocked();
   if (name === 'policies')   loadPolicies();
+  if (name === 'tunnel')     loadTunnel();
 }
 
 // Health check
@@ -819,8 +890,105 @@ function showCacheMsg(msg, type) {
   setTimeout(() => el.style.display = 'none', 3000);
 }
 
+// ── DNS TUNNELING ──────────────────────────────────────────
+async function loadTunnel() {
+  const [alertsR, clientsR] = await Promise.all([
+    fetch(API + '/tunnel/alerts').then(r => r.json()).catch(() => ({alerts:[]})),
+    fetch(API + '/tunnel/clients').then(r => r.json()).catch(() => ({clients:[]})),
+  ]);
+
+  const alerts  = alertsR.alerts  || [];
+  const clients = clientsR.clients || [];
+
+  // Stats
+  const critical = alerts.filter(a => a.Severity === 'critical').length;
+  const high     = alerts.filter(a => a.Severity === 'high').length;
+  document.getElementById('tunnel-stat-total').textContent    = alerts.length;
+  document.getElementById('tunnel-stat-critical').textContent = critical;
+  document.getElementById('tunnel-stat-high').textContent     = high;
+  document.getElementById('tunnel-stat-clients').textContent  = clients.length;
+
+  // Badge en sidebar
+  const badge = document.getElementById('tunnelBadge');
+  if (alerts.length > 0) {
+    badge.style.display = 'inline';
+    badge.textContent = alerts.length;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  // Tabla alertas
+  const sevColor = { critical:'#ef4444', high:'#fb923c', medium:'#facc15', low:'#4ade80' };
+  const typeLabel = {
+    high_entropy:      'Alta entropía',
+    long_label:        'Label larga',
+    unique_subdomains: 'Subdominios únicos',
+    query_rate:        'Alta frecuencia',
+    suspicious_type:   'Tipo sospechoso',
+  };
+  const tbody = document.getElementById('tunnelAlertsTable');
+  if (alerts.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color:var(--text-muted)">Sin alertas activas</td></tr>';
+  } else {
+    tbody.innerHTML = alerts.map(a => {
+      const color = sevColor[a.Severity] || '#8b8fa8';
+      const ts = new Date(a.Timestamp).toLocaleString('es-AR');
+      let details = '—';
+      try {
+        const d = JSON.parse(a.Details);
+        details = Object.entries(d).map(([k,v]) => `${k}: <b>${v}</b>`).join(', ');
+      } catch {}
+      return `<tr>
+        <td style="font-size:11px;white-space:nowrap">${ts}</td>
+        <td><code style="color:#818cf8">${a.ClientIP}</code></td>
+        <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.Domain}">${a.Domain}</td>
+        <td><span class="badge" style="background:rgba(0,0,0,.3);color:${color};border:1px solid ${color}40">${typeLabel[a.AlertType] || a.AlertType}</span></td>
+        <td><span class="badge" style="background:${color}22;color:${color};font-weight:700">${a.Severity.toUpperCase()}</span></td>
+        <td><span style="color:${color};font-weight:700">${a.Score}</span></td>
+        <td style="font-size:11px;color:var(--text-muted)">${details}</td>
+        <td><button class="btn-primary-sm" style="font-size:11px;padding:3px 10px" onclick="resolveAlert(${a.ID})">Resolver</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Tabla clientes
+  const ctbody = document.getElementById('tunnelClientsTable');
+  if (clients.length === 0) {
+    ctbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:var(--text-muted)">Sin alertas registradas</td></tr>';
+  } else {
+    ctbody.innerHTML = clients.map(c => {
+      const ts = c.last_alert ? new Date(c.last_alert).toLocaleString('es-AR') : '—';
+      return `<tr>
+        <td><code style="color:#818cf8">${c.client_ip}</code></td>
+        <td>${c.total_alerts}</td>
+        <td><span style="color:#ef4444;font-weight:700">${c.critical}</span></td>
+        <td><span style="color:#fb923c;font-weight:700">${c.high}</span></td>
+        <td><span style="color:#f87171">${c.max_score}</span></td>
+        <td style="font-size:12px">${ts}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+async function resolveAlert(id) {
+  await fetch(API + '/tunnel/alerts/' + id + '/resolve', { method: 'POST' });
+  loadTunnel();
+}
+
+// Polling de alertas cada 30s
+setInterval(async () => {
+  try {
+    const d = await fetch(API + '/tunnel/alerts').then(r => r.json());
+    const count = (d.alerts || []).length;
+    const badge = document.getElementById('tunnelBadge');
+    if (count > 0) { badge.style.display = 'inline'; badge.textContent = count; }
+    else { badge.style.display = 'none'; }
+  } catch {}
+}, 30000);
+
 // Carga inicial
 loadDashboard();
+loadTunnel(); // para mostrar badge si hay alertas
 </script>
 </body>
 </html>
